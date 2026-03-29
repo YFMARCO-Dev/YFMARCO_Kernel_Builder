@@ -1,4 +1,4 @@
-# Yet Another Kernel Builder Using GitHub Actions
+# YFMARCO_Kernel_Builder Using GitHub Actions
 
 ## How to Use
 1. Go to the **ACTIONS** tab.
@@ -18,3 +18,7 @@
 1. Simply enter the repository URL.
 2. To specify a branch, add `-b <branch>` after or before the URL. If no branch is specified, the default branch will be cloned.
 
+## Thanks/Credits
+ - [YFMARCO-Dev](https://github.com/YFMARCO-Dev)
+ - [dogpoopy](https://github.com/dogpoopy)
+ - And to all Contributors in every repositories and scripts I used.

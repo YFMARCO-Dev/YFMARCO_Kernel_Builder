@@ -6,7 +6,7 @@ on:
       KERNEL_SOURCE:
         description: 'Kernel source URL'
         required: true
-        default: 'https://github.com/aosp-realm/android_kernel_xiaomi_apollo.git'
+        default: 'https://github.com/YFMARCO-Dev/android_kernel_samsung_sm6115.git'
       KERNEL_BRANCH:
         description: 'Kernel branch'
         required: true
@@ -14,7 +14,7 @@ on:
       KERNEL_NAME:
         description: 'Kernel/zip name'
         required: true
-        default: 'perf'
+        default: 'Spider-Kernel'
       CONFIG_FILE:
         description: 'Config file (You can put multiple configs separated by space)'
         required: true
@@ -26,11 +26,11 @@ on:
       ANYKERNEL:
         description: "Clone URL of your AnyKernel"
         required: true
-        default: 'https://github.com/aosp-realm/AnyKernel3.git -b master'
+        default: 'https://github.com/YFMARCO-Dev/AnyKernel3.git -b master'
 
 jobs:
   Build_Kernel:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions: write-all
     defaults:
       run:
