@@ -29,7 +29,8 @@ on:
         default: 'https://github.com/YFMARCO-Dev/AnyKernel3.git -b master'
 
 jobs:
-  Build_Kernel:
+  Build:
+    name: Build Kernel by ${{ github.actor }}
     runs-on: ubuntu-22.04
     permissions: write-all
     defaults:
