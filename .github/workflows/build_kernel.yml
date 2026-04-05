@@ -15,6 +15,10 @@ on:
         description: 'Kernel/zip name'
         required: true
         default: 'Spider-Kernel'
+      DEVICE_CODENAME:
+        description: 'Device codename'
+        required: true
+        default: 'gta4l'
       CONFIG_FILE:
         description: 'Config file (You can put multiple configs separated by space)'
         required: true
@@ -70,7 +74,7 @@ jobs:
           echo "ANYKERNEL=${{ github.workspace }}/anykernel" >> $GITHUB_ENV
           echo "CLANG_DIR=${{ github.workspace }}/toolchain" >> $GITHUB_ENV
           echo "KERNEL_NAME=${{ github.event.inputs.KERNEL_NAME }}" >> $GITHUB_ENV
-          echo "ZIP_NAME=${{ github.event.inputs.KERNEL_NAME }}-$(date +"%d%m%Y").zip" >> $GITHUB_ENV
+          echo "ZIP_NAME=${{ github.event.inputs.KERNEL_NAME }}_${{ github.event.inputs.DEVICE_CODENAME }}_$(date +"%d%m%Y").zip" >> $GITHUB_ENV
           echo "OUTPUT_DIR=${{ github.workspace }}/compiled" >> $GITHUB_ENV
           cd ${{ github.workspace }}/kernel && echo "COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
