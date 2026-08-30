@@ -55,8 +55,8 @@ jobs:
     permissions: write-all
     defaults:
       run:
-       shell: bash
-       working-directory: ${{ github.workspace }}
+        shell: bash
+        working-directory: ${{ github.workspace }}
 
     steps:
       - name: Set-up environment
@@ -108,6 +108,7 @@ jobs:
       - name: Start Compilation
         run: |
          mkdir -p ${{ env.OUTPUT_DIR }}
+         mkdir -p "${{ env.OBJDIR }}"
          cd ${{ github.workspace }}/kernel
          
          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
@@ -175,7 +176,7 @@ jobs:
          diff=$((end - start))
          echo -e "BUILD COMPLETED IN ${diff} SECONDS"
 
-        continue-on-error: false
+         continue-on-error: false
          
       - name: Checking for outputs
         run: |
