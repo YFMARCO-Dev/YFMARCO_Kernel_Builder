@@ -111,14 +111,50 @@ jobs:
          cd ${{ github.workspace }}/kernel
          
          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
-         
-         make_defconfig() {
-            start=$(date +"%s")
-            make -s ARCH=arm64 O=${{ env.OBJDIR }} ${{ github.event.inputs.CONFIG_FILE }} -j$(nproc --all)
+
+         start=$(date +"%s")
+
+         read -r -a config_items <<< "${{ github.event.inputs.CONFIG_FILE }}"
+         if [[ ${#config_items[@]} -lt 1 ]]; then
+            echo "ERROR: CONFIG_FILE is empty"
+            exit 1
+         fi
+
+         resolve_config() {
+            local cfg_path=$1
+            if [[ -f "$cfg_path" ]]; then
+               printf '%s\n' "$cfg_path"
+               return 0
+            fi
+            if [[ -f "arch/arm64/configs/$cfg_path" ]]; then
+               printf '%s\n' "$PWD/arch/arm64/configs/$cfg_path"
+               return 0
+            fi
+            if [[ -f "${{ github.workspace }}/kernel/arch/arm64/configs/$cfg_path" ]]; then
+               printf '%s\n' "${{ github.workspace }}/kernel/arch/arm64/configs/$cfg_path"
+               return 0
+            fi
+            return 1
          }
-         
-         compile() {       
-            make -j$(nproc --all) \
+
+         base_config=""
+         fragment_configs=()
+         for cfg in "${config_items[@]}"; do
+            resolved_cfg="$(resolve_config "$cfg")" || {
+               echo "ERROR: Missing config file: $cfg"
+               exit 1
+            }
+            if [[ -z "$base_config" ]]; then
+               base_config="$resolved_cfg"
+            else
+               fragment_configs+=("$resolved_cfg")
+            fi
+         done
+
+         scripts/kconfig/merge_config.sh -m -O "${{ env.OBJDIR }}" "$base_config" "${fragment_configs[@]}"
+         make -s O="${{ env.OBJDIR }}" ARCH=arm64 olddefconfig
+
+         make -j"$(nproc --all)" \
             O=${{ env.OBJDIR }} \
             ARCH=arm64 \
             CC=clang \
@@ -132,11 +168,8 @@ jobs:
             LD=ld.lld \
             NM=llvm-nm \
             LLVM=1 \
-            LLVM_IAS=1
-         }
-
-         make_defconfig
-         compile
+            LLVM_IAS=1 \
+            Image modules dtbs
 
          end=$(date +"%s")
          diff=$((end - start))
@@ -151,13 +184,18 @@ jobs:
          compiled_image="arch/arm64/boot/Image"
          compiled_gz_image="arch/arm64/boot/Image.gz"
          compiled_gz_dtb="arch/arm64/boot/Image.gz-dtb"
-         compiled_dtbo="arch/arm64/boot/dtbo.img"
-         compiled_dtb_img="arch/arm64/boot/dtb.img"
-         compiled_dtb="arch/arm64/boot/dtb"
          anykernel_root="${{ env.ANYKERNEL }}"
          workspace_root="${{ github.workspace }}"
          samsung_modules_pkg="${workspace_root}/_modules_samsung.7z"
          samsung_dtb_pkg="${workspace_root}/_dtb.7z"
+         mkdtboimg_py="${workspace_root}/mkdtboimg.py"
+         dtb_source_dir="${{ env.OBJDIR }}/arch/arm64/boot/dts"
+         dtbo_files=()
+         dtb_files=()
+
+         if [[ ! -f "${mkdtboimg_py}" ]]; then
+             curl -L "https://android.googlesource.com/platform/system/libufdt/+/refs/heads/main/utils/src/mkdtboimg.py?format=TEXT" | base64 -d > "${mkdtboimg_py}"
+         fi
            
          if [[ -f ${compiled_image} || -f ${compiled_gz_image} || -f ${compiled_gz_dtb} ]]; then
               git clone -q ${{ github.event.inputs.ANYKERNEL }} "${{ env.ANYKERNEL }}"
@@ -172,37 +210,49 @@ jobs:
                   cp -f "${compiled_gz_dtb}" "${{ env.ANYKERNEL }}/Image.gz-dtb" || true
                   cp -f "${compiled_gz_dtb}" "${{ env.OUTPUT_DIR }}/Image.gz-dtb" || true
               fi
-              
-              if [[ -f "${compiled_dtbo}" ]]; then
-                  cp -f "${compiled_dtbo}" "${{ env.ANYKERNEL }}/dtbo.img" || true
-                  cp -f "${compiled_dtbo}" "${{ env.OUTPUT_DIR }}/dtbo.img" || true
-              fi
- 
-              if [[ -f "${compiled_dtb_img}" ]]; then
-                  cp -f "${compiled_dtb_img}" "${{ env.ANYKERNEL }}/dtb.img" || true
-                  cp -f "${compiled_dtb_img}" "${{ env.OUTPUT_DIR }}/dtb.img" || true
-              elif [[ -f "${compiled_dtb}" ]]; then
-                  cp -f "${compiled_dtb}" "${{ env.ANYKERNEL }}/dtb" || true
-                  cp -f "${compiled_dtb}" "${{ env.ANYKERNEL }}/dtb.img" || true
-                  cp -f "${compiled_dtb}" "${{ env.OUTPUT_DIR }}/dtb" || true
-                  cp -f "${compiled_dtb}" "${{ env.OUTPUT_DIR }}/dtb.img" || true
-              fi
 
-              mkdir -p "${anykernel_root}/vendor_ramdisk/lib/modules" "${anykernel_root}/modules/vendor_dlkm/lib/modules"
+              mkdir -p "${anykernel_root}/modules/vendor_ramdisk/lib/modules" "${anykernel_root}/modules/vendor_dlkm/lib/modules"
 
               if [[ -d "${samsung_modules_pkg}" ]]; then
-                  cp -a "${samsung_modules_pkg}/_vendor_boot_modules/." "${anykernel_root}/vendor_ramdisk/lib/modules/"
+                  cp -a "${samsung_modules_pkg}/_vendor_boot_modules/." "${anykernel_root}/modules/vendor_ramdisk/lib/modules/"
                   cp -a "${samsung_modules_pkg}/_vendor_dlkm_modules/." "${anykernel_root}/modules/vendor_dlkm/lib/modules/"
               else
                   echo "WARNING: ${samsung_modules_pkg} not found, staging built modules from out/"
-                  find "${{ env.OBJDIR }}" -type f -name '*.ko' -exec cp -f {} "${anykernel_root}/vendor_ramdisk/lib/modules/" \;
-                  find "${{ env.OBJDIR }}" -type f -name '*.ko' -exec cp -f {} "${anykernel_root}/modules/vendor_dlkm/lib/modules/" \;
+                  while IFS= read -r module_path; do
+                      [[ -n "${module_path}" ]] || continue
+                      found_module=$(find "${{ env.OBJDIR }}" -type f -name "${module_path}" -print -quit)
+                      if [[ -n "${found_module}" ]]; then
+                          cp -f "${found_module}" "${anykernel_root}/modules/vendor_dlkm/lib/modules/"
+                          cp -f "${found_module}" "${anykernel_root}/modules/vendor_ramdisk/lib/modules/" || true
+                      fi
+                  done < "${{ github.workspace }}/kernel/modules.list.msm.parrot"
               fi
 
-              if [[ -d "${samsung_dtb_pkg}" ]]; then
+              if [[ -d "${dtb_source_dir}" ]]; then
+                  mapfile -t dtbo_files < <(find "${dtb_source_dir}" -type f -name '*.dtbo' | sort)
+                  mapfile -t dtb_files < <(find "${dtb_source_dir}" -type f \( -name 'parrot*.dtb' -o -name 'ravelin*.dtb' -o -name 'montague*.dtb' \) | sort)
+              fi
+
+              if [[ ${#dtbo_files[@]} -gt 0 ]]; then
+                  python3 "${mkdtboimg_py}" create "${anykernel_root}/dtbo.img" --page_size=4096 --version=2 "${dtbo_files[@]}"
+                  cp -f "${anykernel_root}/dtbo.img" "${{ env.OUTPUT_DIR }}/dtbo.img" || true
+              elif [[ -d "${samsung_dtb_pkg}" && -f "${samsung_dtb_pkg}/dtbo.img" ]]; then
                   cp -f "${samsung_dtb_pkg}/dtbo.img" "${anykernel_root}/dtbo.img" || true
+                  cp -f "${samsung_dtb_pkg}/dtbo.img" "${{ env.OUTPUT_DIR }}/dtbo.img" || true
+              fi
+
+              if [[ ${#dtb_files[@]} -gt 0 ]]; then
+                  python3 "${mkdtboimg_py}" create "${anykernel_root}/dtb.img" --dt_type=dtb --page_size=4096 --version=2 "${dtb_files[@]}"
+                  cp -f "${anykernel_root}/dtb.img" "${anykernel_root}/dtb" || true
+                  cp -f "${anykernel_root}/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
+              elif [[ -d "${samsung_dtb_pkg}" ]]; then
                   cp -f "${samsung_dtb_pkg}/dtb" "${anykernel_root}/dtb.img" || true
                   cp -f "${samsung_dtb_pkg}/dtb" "${anykernel_root}/dtb" || true
+                  cp -f "${samsung_dtb_pkg}/dtb" "${{ env.OUTPUT_DIR }}/dtb.img" || true
+              fi
+
+              if [[ -f "${samsung_dtb_pkg}/dtbo.img" ]]; then
+                  cp -f "${samsung_dtb_pkg}/dtbo.img" "${anykernel_root}/dtbo.img" || true
               fi
 
               cd "${{ env.ANYKERNEL }}"
