@@ -154,6 +154,10 @@ jobs:
          compiled_dtbo="arch/arm64/boot/dtbo.img"
          compiled_dtb_img="arch/arm64/boot/dtb.img"
          compiled_dtb="arch/arm64/boot/dtb"
+         anykernel_root="${{ env.ANYKERNEL }}"
+         workspace_root="${{ github.workspace }}"
+         samsung_modules_pkg="${workspace_root}/_modules_samsung.7z"
+         samsung_dtb_pkg="${workspace_root}/_dtb.7z"
            
          if [[ -f ${compiled_image} || -f ${compiled_gz_image} || -f ${compiled_gz_dtb} ]]; then
               git clone -q ${{ github.event.inputs.ANYKERNEL }} "${{ env.ANYKERNEL }}"
@@ -179,7 +183,26 @@ jobs:
                   cp -f "${compiled_dtb_img}" "${{ env.OUTPUT_DIR }}/dtb.img" || true
               elif [[ -f "${compiled_dtb}" ]]; then
                   cp -f "${compiled_dtb}" "${{ env.ANYKERNEL }}/dtb" || true
+                  cp -f "${compiled_dtb}" "${{ env.ANYKERNEL }}/dtb.img" || true
                   cp -f "${compiled_dtb}" "${{ env.OUTPUT_DIR }}/dtb" || true
+                  cp -f "${compiled_dtb}" "${{ env.OUTPUT_DIR }}/dtb.img" || true
+              fi
+
+              mkdir -p "${anykernel_root}/vendor_ramdisk/lib/modules" "${anykernel_root}/modules/vendor_dlkm/lib/modules"
+
+              if [[ -d "${samsung_modules_pkg}" ]]; then
+                  cp -a "${samsung_modules_pkg}/_vendor_boot_modules/." "${anykernel_root}/vendor_ramdisk/lib/modules/"
+                  cp -a "${samsung_modules_pkg}/_vendor_dlkm_modules/." "${anykernel_root}/modules/vendor_dlkm/lib/modules/"
+              else
+                  echo "WARNING: ${samsung_modules_pkg} not found, staging built modules from out/"
+                  find "${{ env.OBJDIR }}" -type f -name '*.ko' -exec cp -f {} "${anykernel_root}/vendor_ramdisk/lib/modules/" \;
+                  find "${{ env.OBJDIR }}" -type f -name '*.ko' -exec cp -f {} "${anykernel_root}/modules/vendor_dlkm/lib/modules/" \;
+              fi
+
+              if [[ -d "${samsung_dtb_pkg}" ]]; then
+                  cp -f "${samsung_dtb_pkg}/dtbo.img" "${anykernel_root}/dtbo.img" || true
+                  cp -f "${samsung_dtb_pkg}/dtb" "${anykernel_root}/dtb.img" || true
+                  cp -f "${samsung_dtb_pkg}/dtb" "${anykernel_root}/dtb" || true
               fi
 
               cd "${{ env.ANYKERNEL }}"
