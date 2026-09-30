@@ -65,15 +65,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libfl-dev
           sudo apt-get install -y curl git ftp lftp wget libarchive-tools ccache python-is-python3
-          sudo apt-get install -y zip unzip tar gzip bzip2 rar unrar cpio jq
+          sudo apt-get install -y zip unzip tar gzip bzip2 rar unrar cpio jq python3-pip
           
       - name: Cloning Kernel Source
         run: |
           git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.KERNEL_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.KERNEL_BRANCH }} ${{ github.workspace }}/kernel
 
-          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.MODULES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.MODULES_BRANCH }} ${{ github.workspace }}/sm6475-modules
+          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.MODULES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.MODULES_BRANCH }} ${{ github.workspace }}/sm6475-modules[cite: 1, 2]
 
-          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.DEVICETREES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.DEVICETREES_BRANCH }} ${{ github.workspace }}/sm6475-devicetrees
+          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.DEVICETREES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.DEVICETREES_BRANCH }} ${{ github.workspace }}/sm6475-devicetrees[cite: 5]
 
           cd ${{ github.workspace }}/kernel
           git submodule update --init --recursive
@@ -118,6 +118,7 @@ jobs:
          }
          
          compile() {       
+            # 1. Compile Kernel Image & External Modules[cite: 3]
             make -j$(nproc --all) \
             O=${{ env.OBJDIR }} \
             ARCH=arm64 \
@@ -133,6 +134,26 @@ jobs:
             NM=llvm-nm \
             LLVM=1 \
             LLVM_IAS=1
+
+            # 2. Compile Device Trees (dtbs)
+            make -j$(nproc --all) \
+            O=${{ env.OBJDIR }} \
+            ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            dtbs
+
+            # 3. Compile Modules
+            make -j$(nproc --all) \
+            O=${{ env.OBJDIR }} \
+            ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            modules
          }
 
          make_defconfig
@@ -144,20 +165,18 @@ jobs:
 
         continue-on-error: false
          
-      - name: Checking for outputs
+      - name: Checking for outputs and packaging
         run: |
          cd "${{ env.OBJDIR }}"
          
          compiled_image="arch/arm64/boot/Image"
          compiled_gz_image="arch/arm64/boot/Image.gz"
          compiled_gz_dtb="arch/arm64/boot/Image.gz-dtb"
-         compiled_dtbo="arch/arm64/boot/dtbo.img"
-         compiled_dtb_img="arch/arm64/boot/dtb.img"
-         compiled_dtb="arch/arm64/boot/dtb"
            
          if [[ -f ${compiled_image} || -f ${compiled_gz_image} || -f ${compiled_gz_dtb} ]]; then
               git clone -q ${{ github.event.inputs.ANYKERNEL }} "${{ env.ANYKERNEL }}"
 
+              # Copy Kernel Image
               if [[ -f "${compiled_image}" ]]; then
                   cp -f "${compiled_image}" "${{ env.ANYKERNEL }}/Image" || true
                   cp -f "${compiled_image}" "${{ env.OUTPUT_DIR }}/Image" || true
@@ -169,18 +188,35 @@ jobs:
                   cp -f "${compiled_gz_dtb}" "${{ env.OUTPUT_DIR }}/Image.gz-dtb" || true
               fi
               
-              if [[ -f "${compiled_dtbo}" ]]; then
-                  cp -f "${compiled_dtbo}" "${{ env.ANYKERNEL }}/dtbo.img" || true
-                  cp -f "${compiled_dtbo}" "${{ env.OUTPUT_DIR }}/dtbo.img" || true
+              # Build and Copy dtbo.img using mkdtboimg.py
+              if ls arch/arm64/boot/dts/vendor/qcom/*.dtbo 1> /dev/null 2>&1; then
+                  python ${{ github.workspace }}/kernel/scripts/mkdtboimg.py create arch/arm64/boot/dtbo.img --page_size=4096 arch/arm64/boot/dts/vendor/qcom/*.dtbo
+              elif ls arch/arm64/boot/*.dtbo 1> /dev/null 2>&1; then
+                  python ${{ github.workspace }}/kernel/scripts/mkdtboimg.py create arch/arm64/boot/dtbo.img --page_size=4096 arch/arm64/boot/*.dtbo
               fi
- 
-              if [[ -f "${compiled_dtb_img}" ]]; then
-                  cp -f "${compiled_dtb_img}" "${{ env.ANYKERNEL }}/dtb.img" || true
-                  cp -f "${compiled_dtb_img}" "${{ env.OUTPUT_DIR }}/dtb.img" || true
-              elif [[ -f "${compiled_dtb}" ]]; then
-                  cp -f "${compiled_dtb}" "${{ env.ANYKERNEL }}/dtb" || true
-                  cp -f "${compiled_dtb}" "${{ env.OUTPUT_DIR }}/dtb" || true
+
+              if [[ -f "arch/arm64/boot/dtbo.img" ]]; then
+                  cp -f "arch/arm64/boot/dtbo.img" "${{ env.ANYKERNEL }}/dtbo.img" || true
+                  cp -f "arch/arm64/boot/dtbo.img" "${{ env.OUTPUT_DIR }}/dtbo.img" || true
               fi
+
+              # Handle dtb.img or dtb files
+              if [[ -f "arch/arm64/boot/dtb.img" ]]; then
+                  cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
+                  cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
+              elif [[ -f "arch/arm64/boot/dtb" ]]; then
+                  cp -f "arch/arm64/boot/dtb" "${{ env.ANYKERNEL }}/dtb" || true
+                  cp -f "arch/arm64/boot/dtb" "${{ env.OUTPUT_DIR }}/dtb" || true
+              elif ls arch/arm64/boot/dts/vendor/qcom/*.dtb 1> /dev/null 2>&1; then
+                  cat arch/arm64/boot/dts/vendor/qcom/*.dtb > arch/arm64/boot/dtb
+                  cp -f "arch/arm64/boot/dtb" "${{ env.ANYKERNEL }}/dtb" || true
+                  cp -f "arch/arm64/boot/dtb" "${{ env.OUTPUT_DIR }}/dtb" || true
+              fi
+
+              # Copy compiled modules (.ko) if any exist
+              mkdir -p "${{ env.ANYKERNEL }}/modules/system/lib/modules"
+              find . -name "*.ko" -exec cp {} "${{ env.ANYKERNEL }}/modules/system/lib/modules/" \;
+              find . -name "*.ko" -exec cp {} "${{ env.OUTPUT_DIR }}/" \;
 
               cd "${{ env.ANYKERNEL }}"
               zip -r AnyKernel.zip *
@@ -205,4 +241,4 @@ jobs:
           tag_name: ${{ github.run_id }}
           body: |
             [Kernel Source](${{ env.KERNEL_SOURCE_URL }}/tree/${{ github.event.inputs.KERNEL_BRANCH }})
-            [Latest Commit](${{ env.KERNEL_SOURCE_URL }}/commit/${{ env.COMMIT_ID }}) at the time of building.
+            [Latest Commit](${{ env.KERNEL_SOURCE_URL }}/commit/${{ github.COMMIT_ID }}) at the time of building.
