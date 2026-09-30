@@ -46,7 +46,11 @@ on:
       ANYKERNEL:
         description: "Clone URL of your AnyKernel"
         required: true
-        default: 'https://github.com/YFMARCO-Dev/AnyKernel3.git -b master'
+        default: 'https://github.com/YFMARCO-Dev/AnyKernel3.git'
+      ANYKERNEL_BRANCH:
+        description: "AnyKernel branch"
+        required: true
+        default: 'master'
 
 jobs:
   Build:
@@ -71,9 +75,9 @@ jobs:
         run: |
           git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.KERNEL_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.KERNEL_BRANCH }} ${{ github.workspace }}/kernel
 
-          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.MODULES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.MODULES_BRANCH }} ${{ github.workspace }}/sm6475-modules[cite: 1, 2]
+          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.MODULES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.MODULES_BRANCH }} ${{ github.workspace }}/sm6475-modules
 
-          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.DEVICETREES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.DEVICETREES_BRANCH }} ${{ github.workspace }}/sm6475-devicetrees[cite: 5]
+          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.DEVICETREES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.DEVICETREES_BRANCH }} ${{ github.workspace }}/sm6475-devicetrees
 
           cd ${{ github.workspace }}/kernel
           git submodule update --init --recursive
@@ -118,7 +122,7 @@ jobs:
          }
          
          compile() {       
-            # 1. Compile Kernel Image & External Modules[cite: 3]
+            # 1. Compile Kernel Image
             make -j$(nproc --all) \
             O=${{ env.OBJDIR }} \
             ARCH=arm64 \
@@ -174,9 +178,8 @@ jobs:
          compiled_gz_dtb="arch/arm64/boot/Image.gz-dtb"
            
          if [[ -f ${compiled_image} || -f ${compiled_gz_image} || -f ${compiled_gz_dtb} ]]; then
-              git clone -q ${{ github.event.inputs.ANYKERNEL }} "${{ env.ANYKERNEL }}"
+              git clone -q -b ${{ github.event.inputs.ANYKERNEL_BRANCH }} ${{ github.event.inputs.ANYKERNEL }} "${{ env.ANYKERNEL }}"
 
-              # Copy Kernel Image
               if [[ -f "${compiled_image}" ]]; then
                   cp -f "${compiled_image}" "${{ env.ANYKERNEL }}/Image" || true
                   cp -f "${compiled_image}" "${{ env.OUTPUT_DIR }}/Image" || true
@@ -188,7 +191,6 @@ jobs:
                   cp -f "${compiled_gz_dtb}" "${{ env.OUTPUT_DIR }}/Image.gz-dtb" || true
               fi
               
-              # Build and Copy dtbo.img using mkdtboimg.py
               if ls arch/arm64/boot/dts/vendor/qcom/*.dtbo 1> /dev/null 2>&1; then
                   python ${{ github.workspace }}/kernel/scripts/mkdtboimg.py create arch/arm64/boot/dtbo.img --page_size=4096 arch/arm64/boot/dts/vendor/qcom/*.dtbo
               elif ls arch/arm64/boot/*.dtbo 1> /dev/null 2>&1; then
@@ -200,7 +202,6 @@ jobs:
                   cp -f "arch/arm64/boot/dtbo.img" "${{ env.OUTPUT_DIR }}/dtbo.img" || true
               fi
 
-              # Handle dtb.img or dtb files
               if [[ -f "arch/arm64/boot/dtb.img" ]]; then
                   cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
                   cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
@@ -213,7 +214,6 @@ jobs:
                   cp -f "arch/arm64/boot/dtb" "${{ env.OUTPUT_DIR }}/dtb" || true
               fi
 
-              # Copy compiled modules (.ko) if any exist
               mkdir -p "${{ env.ANYKERNEL }}/modules/system/lib/modules"
               find . -name "*.ko" -exec cp {} "${{ env.ANYKERNEL }}/modules/system/lib/modules/" \;
               find . -name "*.ko" -exec cp {} "${{ env.OUTPUT_DIR }}/" \;
