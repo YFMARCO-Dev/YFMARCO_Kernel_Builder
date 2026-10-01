@@ -50,7 +50,7 @@ on:
       ANYKERNEL_BRANCH:
         description: "AnyKernel branch"
         required: true
-        default: 'spider-a36xq'
+        default: 'master'
 
 jobs:
   Build:
@@ -121,8 +121,7 @@ jobs:
             make -s ARCH=arm64 O=${{ env.OBJDIR }} ${{ github.event.inputs.CONFIG_FILE }} -j$(nproc --all)
          }
          
-         compile() {       
-            # 1. Compile Kernel Image
+         compile() {
             make -j$(nproc --all) \
             O=${{ env.OBJDIR }} \
             ARCH=arm64 \
@@ -137,27 +136,8 @@ jobs:
             LD=ld.lld \
             NM=llvm-nm \
             LLVM=1 \
-            LLVM_IAS=1
-
-            # 2. Compile Device Trees (dtbs)
-            make -j$(nproc --all) \
-            O=${{ env.OBJDIR }} \
-            ARCH=arm64 \
-            CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            LLVM=1 \
             LLVM_IAS=1 \
-            dtbs
-
-            # 3. Compile Modules
-            make -j$(nproc --all) \
-            O=${{ env.OBJDIR }} \
-            ARCH=arm64 \
-            CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            modules
+            dtbs modules
          }
 
          make_defconfig
@@ -241,4 +221,4 @@ jobs:
           tag_name: ${{ github.run_id }}
           body: |
             [Kernel Source](${{ env.KERNEL_SOURCE_URL }}/tree/${{ github.event.inputs.KERNEL_BRANCH }})
-            [Latest Commit](${{ env.KERNEL_SOURCE_URL }}/commit/${{ github.COMMIT_ID }}) at the time of building.
+            [Latest Commit](${{ env.KERNEL_SOURCE_URL }}/commit/${{ env.COMMIT_ID }}) at the time of building.
