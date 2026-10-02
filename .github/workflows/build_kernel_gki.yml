@@ -190,14 +190,22 @@ jobs:
               elif [[ -f "arch/arm64/boot/dtb" ]]; then
                   cp -f "arch/arm64/boot/dtb" "${{ env.ANYKERNEL }}/dtb.img" || true
                   cp -f "arch/arm64/boot/dtb" "${{ env.OUTPUT_DIR }}/dtb.img" || true
-              elif ls arch/arm64/boot/dts/vendor/qcom/*parrot*.dtb 1> /dev/null 2>&1; then
-                  cat arch/arm64/boot/dts/vendor/qcom/*parrot*.dtb > arch/arm64/boot/dtb.img
-                  cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
-                  cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
-              elif ls arch/arm64/boot/dts/vendor/qcom/*.dtb 1> /dev/null 2>&1; then
-                  cat arch/arm64/boot/dts/vendor/qcom/*.dtb > arch/arm64/boot/dtb.img
-                  cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
-                  cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
+              else
+
+                  dtb_dir=""
+                  if ls arch/arm64/boot/dts/vendor/qcom/*.dtb 1> /dev/null 2>&1; then
+                      dtb_dir="arch/arm64/boot/dts/vendor/qcom"
+                  elif ls arch/arm64/boot/dts/*.dtb 1> /dev/null 2>&1; then
+                      dtb_dir="arch/arm64/boot/dts"
+                  fi
+
+                  if [[ -n "${dtb_dir}" ]]; then
+                      find "${dtb_dir}" -maxdepth 1 -name "*.dtb" ! -name "*dtbo*" ! -name "*overlay*" -exec cat {} + > arch/arm64/boot/dtb.img
+                      if [[ -s "arch/arm64/boot/dtb.img" ]]; then
+                          cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
+                          cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
+                      fi
+                  fi
               fi
 
               mkdir -p "${{ env.ANYKERNEL }}/modules/system/lib/modules"
