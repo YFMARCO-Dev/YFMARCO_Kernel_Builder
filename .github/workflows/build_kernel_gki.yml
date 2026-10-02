@@ -184,7 +184,6 @@ jobs:
                   cp -f "arch/arm64/boot/dtbo.img" "${{ env.OUTPUT_DIR }}/dtbo.img" || true
               fi
 
-              # معالجة وتجميع ملفات dtb.img المنفصلة الخاصة بالمعالج المستهدف فقط
               if [[ -f "arch/arm64/boot/dtb.img" ]]; then
                   cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
                   cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
