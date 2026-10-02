@@ -63,9 +63,11 @@ jobs:
        working-directory: ${{ github.workspace }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set-up environment
         run: |
-          rm -rf ${{ github.workspace }}/*
           sudo apt-get update
           sudo apt-get install -y build-essential bc gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libfl-dev
           sudo apt-get install -y curl git ftp lftp wget libarchive-tools ccache python-is-python3
@@ -172,9 +174,9 @@ jobs:
               fi
               
               if ls arch/arm64/boot/dts/vendor/qcom/*.dtbo 1> /dev/null 2>&1; then
-                  python ${{ github.workspace }}/kernel/scripts/mkdtboimg.py create arch/arm64/boot/dtbo.img --page_size=4096 arch/arm64/boot/dts/vendor/qcom/*.dtbo
+                  python ${{ github.workspace }}/scripts/mkdtboimg.py create arch/arm64/boot/dtbo.img --page_size=4096 arch/arm64/boot/dts/vendor/qcom/*.dtbo
               elif ls arch/arm64/boot/*.dtbo 1> /dev/null 2>&1; then
-                  python ${{ github.workspace }}/kernel/scripts/mkdtboimg.py create arch/arm64/boot/dtbo.img --page_size=4096 arch/arm64/boot/*.dtbo
+                  python ${{ github.workspace }}/scripts/mkdtboimg.py create arch/arm64/boot/dtbo.img --page_size=4096 arch/arm64/boot/*.dtbo
               fi
 
               if [[ -f "arch/arm64/boot/dtbo.img" ]]; then
