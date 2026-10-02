@@ -137,7 +137,7 @@ jobs:
             NM=llvm-nm \
             LLVM=1 \
             LLVM_IAS=1 \
-            dtbs modules
+            Image Image.gz dtbs modules
          }
 
          make_defconfig
