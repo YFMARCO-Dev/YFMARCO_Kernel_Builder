@@ -191,7 +191,6 @@ jobs:
                   cp -f "arch/arm64/boot/dtb" "${{ env.ANYKERNEL }}/dtb.img" || true
                   cp -f "arch/arm64/boot/dtb" "${{ env.OUTPUT_DIR }}/dtb.img" || true
               else
-
                   dtb_dir=""
                   if ls arch/arm64/boot/dts/vendor/qcom/*.dtb 1> /dev/null 2>&1; then
                       dtb_dir="arch/arm64/boot/dts/vendor/qcom"
@@ -209,7 +208,8 @@ jobs:
               fi
 
               mkdir -p "${{ env.ANYKERNEL }}/modules/system/lib/modules"
-              find . -name "*.ko" -exec cp {} "${{ env.ANYKERNEL }}/modules/system/lib/modules/" \;
+              
+              find "${{ env.OBJDIR }}" "${{ github.workspace }}/sm6475-modules" -name "*.ko" -exec cp {} "${{ env.ANYKERNEL }}/modules/system/lib/modules/" \;
 
               cd "${{ env.ANYKERNEL }}"
               zip -r AnyKernel.zip *
