@@ -198,7 +198,6 @@ jobs:
 
               mkdir -p "${{ env.ANYKERNEL }}/modules/system/lib/modules"
               find . -name "*.ko" -exec cp {} "${{ env.ANYKERNEL }}/modules/system/lib/modules/" \;
-              find . -name "*.ko" -exec cp {} "${{ env.OUTPUT_DIR }}/" \;
 
               cd "${{ env.ANYKERNEL }}"
               zip -r AnyKernel.zip *
