@@ -71,7 +71,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libfl-dev
           sudo apt-get install -y curl git ftp lftp wget libarchive-tools ccache python-is-python3
-          sudo apt-get install -y zip unzip tar gzip bzip2 rar unrar cpio jq python3-pip
+          sudo apt-get install -y zip unzip tar gzip bzip2 rar unrar cpio jq python3-pip device-tree-compiler
           
       - name: Cloning Kernel Source
         run: |
@@ -184,16 +184,21 @@ jobs:
                   cp -f "arch/arm64/boot/dtbo.img" "${{ env.OUTPUT_DIR }}/dtbo.img" || true
               fi
 
+              # معالجة وتجميع ملفات dtb.img المنفصلة الخاصة بالمعالج المستهدف فقط
               if [[ -f "arch/arm64/boot/dtb.img" ]]; then
                   cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
                   cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
               elif [[ -f "arch/arm64/boot/dtb" ]]; then
-                  cp -f "arch/arm64/boot/dtb" "${{ env.ANYKERNEL }}/dtb" || true
-                  cp -f "arch/arm64/boot/dtb" "${{ env.OUTPUT_DIR }}/dtb" || true
+                  cp -f "arch/arm64/boot/dtb" "${{ env.ANYKERNEL }}/dtb.img" || true
+                  cp -f "arch/arm64/boot/dtb" "${{ env.OUTPUT_DIR }}/dtb.img" || true
+              elif ls arch/arm64/boot/dts/vendor/qcom/*parrot*.dtb 1> /dev/null 2>&1; then
+                  cat arch/arm64/boot/dts/vendor/qcom/*parrot*.dtb > arch/arm64/boot/dtb.img
+                  cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
+                  cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
               elif ls arch/arm64/boot/dts/vendor/qcom/*.dtb 1> /dev/null 2>&1; then
-                  cat arch/arm64/boot/dts/vendor/qcom/*.dtb > arch/arm64/boot/dtb
-                  cp -f "arch/arm64/boot/dtb" "${{ env.ANYKERNEL }}/dtb" || true
-                  cp -f "arch/arm64/boot/dtb" "${{ env.OUTPUT_DIR }}/dtb" || true
+                  cat arch/arm64/boot/dts/vendor/qcom/*.dtb > arch/arm64/boot/dtb.img
+                  cp -f "arch/arm64/boot/dtb.img" "${{ env.ANYKERNEL }}/dtb.img" || true
+                  cp -f "arch/arm64/boot/dtb.img" "${{ env.OUTPUT_DIR }}/dtb.img" || true
               fi
 
               mkdir -p "${{ env.ANYKERNEL }}/modules/system/lib/modules"
