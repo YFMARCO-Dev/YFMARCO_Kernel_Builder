@@ -164,7 +164,7 @@ jobs:
             O=${{ env.OBJDIR }}
             ARCH=arm64
             CC=clang
-            KCFLAGS="-Wno-frame-larger-than -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types"
+            KCFLAGS="-Wno-frame-larger-than -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types -Wno-error=misleading-indentation"
             CROSS_COMPILE=aarch64-linux-gnu-
             CROSS_COMPILE_ARM32=arm-linux-gnueabi-
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
@@ -194,7 +194,19 @@ jobs:
          compile_ext_modules() {
             extra_symbols=""
             units=()
-            built=()
+            WRAPPER_ARGS=()
+            for a in "${MAKE_ARGS[@]}"; do
+               if [[ "${a}" == O=* ]]; then
+                  continue
+               fi
+               WRAPPER_ARGS+=("${a}")
+            done
+            export KBUILD_EXTRA_SYMBOLS=""
+            for w in "${{ env.MODULES_DIR }}"/*/opensource/wlan/platform; do
+               if [[ -d "${w}" ]]; then
+                  export WLAN_PLATFORM_ROOT="${w}"
+               fi
+            done
             while IFS= read -r mod_rel; do
                mod_path="$(resolve_mod_dir "${mod_rel}" || true)"
                if [[ -z "${mod_path}" ]]; then
@@ -253,6 +265,50 @@ jobs:
                fi
             done < <(find "${{ env.MODULES_DIR }}" -mindepth 4 -maxdepth 6 -name Kbuild | sort -u)
 
+            filtered=()
+            for u in "${units[@]}"; do
+               base="$(basename "${u}")"
+               if [[ "${base}" == "emac-dwc-eqos" ]]; then
+                  if ! header_exists "linux/msm-bus.h"; then
+                     echo "SKIPPING ${u}: prerequisite linux/msm-bus.h not present in trees"
+                     continue
+                  fi
+               fi
+               if [[ "${base}" == "ubwcp" ]]; then
+                  if ! header_exists "linux/qcom_scm.h"; then
+                     echo "SKIPPING ${u}: prerequisite linux/qcom_scm.h not present in trees"
+                     continue
+                  fi
+               fi
+               if [[ "${base}" == "qcacld-3.0" ]]; then
+                  soc="$(echo "${{ github.event.inputs.CONFIG_FILE }}" | grep -oE "(vendor|oem)/[A-Za-z0-9_]+" | head -n1 | sed -E 's~^(vendor|oem)/~~; s/_.*//' || true)"
+                  chips=()
+                  if [[ -n "${soc}" ]]; then
+                     for f in "${u}/configs/${soc}_gki_"*_defconfig; do
+                        if [[ -f "${f}" ]]; then
+                           chip="$(basename "${f}" _defconfig | sed -E "s~^${soc}_gki_~~")"
+                           chips+=("${chip}")
+                        fi
+                     done
+                  fi
+                  nchip=0
+                  for c in "${chips[@]}"; do
+                     nchip=$((nchip + 1))
+                  done
+                  if [[ "${nchip}" == "1" ]]; then
+                     lnk="$(dirname "${u}")/${chips}"
+                     ln -sfn "${u}" "${lnk}"
+                     echo "WLAN PROFILE ${chips} VIA ${lnk}"
+                     filtered+=("${lnk}")
+                     continue
+                  fi
+                  echo "SKIPPING ${u}: WLAN_PROFILE not resolvable, provide WLAN_PROFILE matching one of configs/${soc}_gki_*_defconfig"
+                  continue
+               fi
+               filtered+=("${u}")
+            done
+            units=("${filtered[@]}")
+
             pending=("${units[@]}")
             pass=0
             while [[ -n "${pending[*]}" && "${pass}" -lt 4 ]]; do
@@ -260,11 +316,11 @@ jobs:
                failed=()
                for mod_path in "${pending[@]}"; do
                   echo "BUILDING EXTERNAL MODULE ${mod_path}"
+                  export KBUILD_EXTRA_SYMBOLS="${extra_symbols}"
                   if build_mod "${mod_path}" "${extra_symbols}"; then
                      if [[ -f "${mod_path}/Module.symvers" ]]; then
                         extra_symbols="${extra_symbols} ${mod_path}/Module.symvers"
                      fi
-                     built+=("${mod_path}")
                   else
                      failed+=("${mod_path}")
                   fi
@@ -307,27 +363,35 @@ jobs:
          }
 
          build_mod() {
-            mod_rel="$(realpath --relative-to=${{ github.workspace }}/kernel "$1")"
-            make -j$(nproc --all) -C ${{ github.workspace }}/kernel "${MAKE_ARGS[@]}" \
-               M="${mod_rel}" \
-               KBUILD_EXTRA_SYMBOLS="$2" \
-               AUDIO_ROOT="$1" \
-               TOUCH_ROOT="$1" \
-               DISPLAY_ROOT="$1" \
-               VIDEO_ROOT="$1" \
-               SSG_MODULE_ROOT="$1" \
-               CAMERA_KERNEL_ROOT="$1" \
-               KERNEL_ROOT="$1" \
-               WLAN_ROOT="$1" \
-               SYNX_ROOT="$1" \
-               MSM_HW_FENCE_ROOT="$1" \
-               SYNC_FENCE_ROOT="$1" \
-               SPU_ROOT="$1" \
-               MMRM_ROOT="$1" \
-               DSP_ROOT="$1" \
-               MSM_EXT_DISPLAY_ROOT="$1" \
-               BT_ROOT="$1" \
-               modules
+            mod_rel="$(realpath -s --relative-to=${{ github.workspace }}/kernel "$1")"
+            if grep -q "KERNEL_SRC" "$1/Makefile" 2>/dev/null; then
+               make -j$(nproc --all) -C "$1" "${WRAPPER_ARGS[@]}" KERNEL_SRC=${{ github.workspace }}/kernel M="${mod_rel}" KBUILD_OUTPUT=${{ env.OBJDIR }} all
+            else
+               make -j$(nproc --all) -C ${{ github.workspace }}/kernel "${MAKE_ARGS[@]}" \
+                  M="${mod_rel}" \
+                  KBUILD_EXTRA_SYMBOLS="$2" \
+                  AUDIO_ROOT="$1" \
+                  TOUCH_ROOT="$1" \
+                  DISPLAY_ROOT="$1" \
+                  VIDEO_ROOT="$1" \
+                  SSG_MODULE_ROOT="$1" \
+                  CAMERA_KERNEL_ROOT="$1" \
+                  KERNEL_ROOT="$1" \
+                  WLAN_ROOT="$1" \
+                  SYNX_ROOT="$1" \
+                  MSM_HW_FENCE_ROOT="$1" \
+                  SYNC_FENCE_ROOT="$1" \
+                  SPU_ROOT="$1" \
+                  MMRM_ROOT="$1" \
+                  DSP_ROOT="$1" \
+                  MSM_EXT_DISPLAY_ROOT="$1" \
+                  BT_ROOT="$1" \
+                  modules
+            fi
+         }
+
+         header_exists() {
+            find "${{ github.workspace }}/kernel" "${{ env.MODULES_DIR }}" -path "*$1" 2>/dev/null | grep -q .
          }
 
          make_defconfig
