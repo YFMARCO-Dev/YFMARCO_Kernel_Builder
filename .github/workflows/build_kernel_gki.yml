@@ -138,6 +138,7 @@ jobs:
       - name: Set environment variables
         run: |
           echo "OBJDIR=${{ github.workspace }}/out" >> $GITHUB_ENV
+          echo "TARGET_PRODUCT=${{ github.event.inputs.DEVICE_CODENAME }}" >> $GITHUB_ENV
           echo "ANYKERNEL=${{ github.workspace }}/anykernel" >> $GITHUB_ENV
           echo "CLANG_DIR=${{ github.workspace }}/toolchain" >> $GITHUB_ENV
           echo "KERNEL_NAME=${{ github.event.inputs.KERNEL_NAME }}" >> $GITHUB_ENV
