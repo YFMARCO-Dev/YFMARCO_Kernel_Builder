@@ -137,7 +137,7 @@ jobs:
 
       - name: Set environment variables
         run: |
-          echo "OBJDIR=${{ github.workspace }}/kernel/out" >> $GITHUB_ENV
+          echo "OBJDIR=${{ github.workspace }}/out" >> $GITHUB_ENV
           echo "ANYKERNEL=${{ github.workspace }}/anykernel" >> $GITHUB_ENV
           echo "CLANG_DIR=${{ github.workspace }}/toolchain" >> $GITHUB_ENV
           echo "KERNEL_NAME=${{ github.event.inputs.KERNEL_NAME }}" >> $GITHUB_ENV
@@ -291,8 +291,9 @@ jobs:
          }
 
          build_mod() {
+            mod_rel="$(realpath --relative-to=${{ github.workspace }}/kernel "$1")"
             make -j$(nproc --all) -C ${{ github.workspace }}/kernel "${MAKE_ARGS[@]}" \
-               M="$1" \
+               M="${mod_rel}" \
                KBUILD_EXTRA_SYMBOLS="$2" \
                AUDIO_ROOT="$1" \
                TOUCH_ROOT="$1" \
