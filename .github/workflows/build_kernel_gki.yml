@@ -75,14 +75,34 @@ jobs:
           
       - name: Cloning Kernel Source
         run: |
-          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.KERNEL_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.KERNEL_BRANCH }} ${{ github.workspace }}/kernel
+          urlenc() {
+            printf %s "$1" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'
+          }
 
-          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.MODULES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.MODULES_BRANCH }} ${{ github.workspace }}/sm6475-modules
+          clone_repo() {
+            git clone --single-branch --depth=1 --no-tags "https://$(urlenc "${{ secrets.KERNEL_USERNAME }}"):$(urlenc "${{ secrets.KERNEL_TOKEN }}")@$(echo "$1" | sed 's~https://~~')" -b "$2" "$3"
+          }
 
-          git clone --single-branch --depth=1 --no-tags https://$(printf %s "${{ secrets.KERNEL_USERNAME }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))'):$(printf %s "${{ secrets.KERNEL_TOKEN }}" | python -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(), safe=""))')@$(echo "${{ github.event.inputs.DEVICETREES_SOURCE }}" | sed 's~https://~~') -b ${{ github.event.inputs.DEVICETREES_BRANCH }} ${{ github.workspace }}/sm6475-devicetrees
+          clone_repo "${{ github.event.inputs.KERNEL_SOURCE }}" "${{ github.event.inputs.KERNEL_BRANCH }}" "${{ github.workspace }}/kernel"
 
           cd ${{ github.workspace }}/kernel
           git submodule update --init --recursive
+
+          MODULES_DIR_NAME=$(grep -E '^ext-mod-dir[[:space:]]*:=' Makefile | head -n1 | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]+$//' | xargs -r basename)
+          if [[ -z "${MODULES_DIR_NAME}" ]]; then
+            MODULES_DIR_NAME=$(basename "${{ github.event.inputs.MODULES_SOURCE }}" .git | sed -E 's/.*_([^_]+-modules)$/\1/')
+          fi
+
+          DEVICETREES_DIR_NAME=$(grep -rhoE '\.\./[A-Za-z0-9_]+-devicetrees' --include=Makefile --include=Kbuild --include='*.mk' --include='*.bzl' --include='*.bp' . 2>/dev/null | head -n1 | sed 's~\.\./~~')
+          if [[ -z "${DEVICETREES_DIR_NAME}" ]]; then
+            DEVICETREES_DIR_NAME=$(basename "${{ github.event.inputs.DEVICETREES_SOURCE }}" .git | sed -E 's/.*_([^_]+-devicetrees)$/\1/')
+          fi
+
+          echo "MODULES_DIR=${{ github.workspace }}/${MODULES_DIR_NAME}" >> $GITHUB_ENV
+          echo "DEVICETREES_DIR=${{ github.workspace }}/${DEVICETREES_DIR_NAME}" >> $GITHUB_ENV
+
+          clone_repo "${{ github.event.inputs.MODULES_SOURCE }}" "${{ github.event.inputs.MODULES_BRANCH }}" "${{ github.workspace }}/${MODULES_DIR_NAME}"
+          clone_repo "${{ github.event.inputs.DEVICETREES_SOURCE }}" "${{ github.event.inputs.DEVICETREES_BRANCH }}" "${{ github.workspace }}/${DEVICETREES_DIR_NAME}"
           
       - name: Set-up Toolchain
         run: |
@@ -117,33 +137,68 @@ jobs:
          cd ${{ github.workspace }}/kernel
          
          export PATH="${{ env.CLANG_DIR }}/bin:$PATH"
+
+         start=$(date +"%s")
+
+         MAKE_ARGS=(
+            O=${{ env.OBJDIR }}
+            ARCH=arm64
+            CC=clang
+            KCFLAGS="-Wno-frame-larger-than -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types"
+            CROSS_COMPILE=aarch64-linux-gnu-
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+            AR=llvm-ar
+            LLVM_NM=llvm-nm
+            OBJCOPY=llvm-objcopy
+            LD=ld.lld
+            NM=llvm-nm
+            LLVM=1
+            LLVM_IAS=1
+         )
          
          make_defconfig() {
-            start=$(date +"%s")
             make -s ARCH=arm64 O=${{ env.OBJDIR }} ${{ github.event.inputs.CONFIG_FILE }} -j$(nproc --all)
          }
          
          compile() {
-            make -j$(nproc --all) \
-            O=${{ env.OBJDIR }} \
-            ARCH=arm64 \
-            CC=clang \
-            KCFLAGS="-Wno-frame-larger-than -Wno-error=implicit-int -Wno-error=incompatible-function-pointer-types" \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            AR=llvm-ar \
-            LLVM_NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            LD=ld.lld \
-            NM=llvm-nm \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            Image Image.gz dtbs modules
+            make -j$(nproc --all) "${MAKE_ARGS[@]}" Image Image.gz dtbs modules
+         }
+
+         get_ext_mod_dirs() {
+            awk '/^ext-mod-dirs[[:space:]]*:=[[:space:]]*\\[[:space:]]*$/{f=1;next} f{print; if ($0 !~ /\\[[:space:]]*$/) f=0}' Makefile \
+            | sed -E 's/\\//g; s/\$\(ext-mod-dir\)\/?//; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+            | grep -v '^$'
+         }
+
+         compile_ext_modules() {
+            extra_symbols=""
+            while IFS= read -r mod_rel; do
+               mod_path="${{ env.MODULES_DIR }}/${mod_rel}"
+               if [[ ! -d "${mod_path}" ]]; then
+                  echo "SKIPPING ${mod_rel}: directory not found"
+                  continue
+               fi
+               if [[ ! -f "${mod_path}/Makefile" && ! -f "${mod_path}/Kbuild" ]]; then
+                  echo "SKIPPING ${mod_rel}: no Makefile or Kbuild"
+                  continue
+               fi
+               echo "BUILDING EXTERNAL MODULE ${mod_rel}"
+               make -j$(nproc --all) -C ${{ github.workspace }}/kernel "${MAKE_ARGS[@]}" \
+                  M="${mod_path}" \
+                  KBUILD_EXTRA_SYMBOLS="${extra_symbols}" \
+                  modules
+               if [[ -f "${mod_path}/Module.symvers" ]]; then
+                  extra_symbols="${extra_symbols} ${mod_path}/Module.symvers"
+               fi
+            done < <(get_ext_mod_dirs)
+
+            find "${{ env.MODULES_DIR }}" "${{ env.OBJDIR }}" -name "*.ko" -exec llvm-strip --strip-debug {} \;
          }
 
          make_defconfig
          compile
+         compile_ext_modules
 
          end=$(date +"%s")
          diff=$((end - start))
@@ -209,7 +264,7 @@ jobs:
 
               mkdir -p "${{ env.ANYKERNEL }}/modules/system/lib/modules"
               
-              find "${{ env.OBJDIR }}" "${{ github.workspace }}/sm6475-modules" -name "*.ko" -exec cp {} "${{ env.ANYKERNEL }}/modules/system/lib/modules/" \;
+              find "${{ env.OBJDIR }}" "${{ env.MODULES_DIR }}" -name "*.ko" -exec cp -f {} "${{ env.ANYKERNEL }}/modules/system/lib/modules/" \;
 
               cd "${{ env.ANYKERNEL }}"
               zip -r AnyKernel.zip *
