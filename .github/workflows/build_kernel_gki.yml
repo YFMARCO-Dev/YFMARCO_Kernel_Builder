@@ -88,12 +88,12 @@ jobs:
           cd ${{ github.workspace }}/kernel
           git submodule update --init --recursive
 
-          MODULES_DIR_NAME=$(grep -E '^ext-mod-dir[[:space:]]*:=' Makefile | head -n1 | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]+$//' | xargs -r basename)
+          MODULES_DIR_NAME=$(grep -E '^ext-mod-dir[[:space:]]*:=' Makefile | head -n1 | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]+$//' | xargs -r basename || true)
           if [[ -z "${MODULES_DIR_NAME}" ]]; then
             MODULES_DIR_NAME=$(basename "${{ github.event.inputs.MODULES_SOURCE }}" .git | sed -E 's/.*_([^_]+-modules)$/\1/')
           fi
 
-          DEVICETREES_DIR_NAME=$(grep -rhoE '\.\./[A-Za-z0-9_]+-devicetrees' --include=Makefile --include=Kbuild --include='*.mk' --include='*.bzl' --include='*.bp' . 2>/dev/null | head -n1 | sed 's~\.\./~~')
+          DEVICETREES_DIR_NAME=$(grep -rhoE '\.\./[A-Za-z0-9_]+-devicetrees' --include=Makefile --include=Kbuild --include='*.mk' --include='*.bzl' --include='*.bp' . 2>/dev/null | head -n1 | sed 's~\.\./~~' || true)
           if [[ -z "${DEVICETREES_DIR_NAME}" ]]; then
             DEVICETREES_DIR_NAME=$(basename "${{ github.event.inputs.DEVICETREES_SOURCE }}" .git | sed -E 's/.*_([^_]+-devicetrees)$/\1/')
           fi
@@ -168,7 +168,7 @@ jobs:
          get_ext_mod_dirs() {
             awk '/^ext-mod-dirs[[:space:]]*:=[[:space:]]*\\[[:space:]]*$/{f=1;next} f{print; if ($0 !~ /\\[[:space:]]*$/) f=0}' Makefile \
             | sed -E 's/\\//g; s/\$\(ext-mod-dir\)\/?//; s/^[[:space:]]+//; s/[[:space:]]+$//' \
-            | grep -v '^$'
+            | { grep -v '^$' || true; }
          }
 
          compile_ext_modules() {
