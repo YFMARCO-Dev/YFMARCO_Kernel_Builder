@@ -193,6 +193,7 @@ jobs:
 
          compile_ext_modules() {
             extra_symbols=""
+            units=()
             built=()
             while IFS= read -r mod_rel; do
                mod_path="$(resolve_mod_dir "${mod_rel}" || true)"
@@ -200,31 +201,29 @@ jobs:
                   echo "SKIPPING ${mod_rel}: directory not found"
                   continue
                fi
-               echo "BUILDING EXTERNAL MODULE ${mod_path}"
-               build_mod "${mod_path}" "${extra_symbols}"
-               if [[ -f "${mod_path}/Module.symvers" ]]; then
-                  extra_symbols="${extra_symbols} ${mod_path}/Module.symvers"
-               fi
-               built+=("${mod_path}")
-            done < <(get_ext_mod_dirs)
-
-            while IFS= read -r top; do
-               skip=0
-               for b in "${built[@]}"; do
-                  if [[ "${top}" == "${b}" ]]; then
-                     skip=1
+               dup=0
+               for u in "${units[@]}"; do
+                  if [[ "${mod_path}" == "${u}" ]]; then
+                     dup=1
                      break
                   fi
                done
-               if [[ "${skip}" == "1" ]]; then
-                  continue
+               if [[ "${dup}" == "0" ]]; then
+                  units+=("${mod_path}")
                fi
-               echo "BUILDING EXTERNAL MODULE ${top}"
-               build_mod "${top}" "${extra_symbols}"
-               if [[ -f "${top}/Module.symvers" ]]; then
-                  extra_symbols="${extra_symbols} ${top}/Module.symvers"
+            done < <(get_ext_mod_dirs)
+
+            while IFS= read -r top; do
+               dup=0
+               for u in "${units[@]}"; do
+                  if [[ "${top}" == "${u}" ]]; then
+                     dup=1
+                     break
+                  fi
+               done
+               if [[ "${dup}" == "0" ]]; then
+                  units+=("${top}")
                fi
-               built+=("${top}")
             done < <(for d in "${{ env.MODULES_DIR }}"/*/opensource/* "${{ env.MODULES_DIR }}"/*; do
                if [[ -d "${d}" ]]; then
                   if [[ -f "${d}/Makefile" && -f "${d}/Kbuild" ]]; then
@@ -238,27 +237,44 @@ jobs:
                if [[ ! -f "${sub}/Makefile" ]]; then
                   continue
                fi
-               skip=0
-               for b in "${built[@]}"; do
-                  if [[ "${sub}" == "${b}" ]]; then
-                     skip=1
-                     break
-                  fi
-               done
-               if [[ "${skip}" == "1" ]]; then
-                  continue
-               fi
                parent="$(dirname "${sub}")"
                if [[ -f "${parent}/Kbuild" || -f "${parent}/Makefile" ]]; then
                   continue
                fi
-               echo "BUILDING EXTERNAL MODULE ${sub}"
-               build_mod "${sub}" "${extra_symbols}"
-               if [[ -f "${sub}/Module.symvers" ]]; then
-                  extra_symbols="${extra_symbols} ${sub}/Module.symvers"
+               dup=0
+               for u in "${units[@]}"; do
+                  if [[ "${sub}" == "${u}" ]]; then
+                     dup=1
+                     break
+                  fi
+               done
+               if [[ "${dup}" == "0" ]]; then
+                  units+=("${sub}")
                fi
-               built+=("${sub}")
             done < <(find "${{ env.MODULES_DIR }}" -mindepth 4 -maxdepth 6 -name Kbuild | sort -u)
+
+            pending=("${units[@]}")
+            pass=0
+            while [[ -n "${pending[*]}" && "${pass}" -lt 4 ]]; do
+               pass=$((pass + 1))
+               failed=()
+               for mod_path in "${pending[@]}"; do
+                  echo "BUILDING EXTERNAL MODULE ${mod_path}"
+                  if build_mod "${mod_path}" "${extra_symbols}"; then
+                     if [[ -f "${mod_path}/Module.symvers" ]]; then
+                        extra_symbols="${extra_symbols} ${mod_path}/Module.symvers"
+                     fi
+                     built+=("${mod_path}")
+                  else
+                     failed+=("${mod_path}")
+                  fi
+               done
+               pending=("${failed[@]}")
+            done
+            if [[ -n "${pending[*]}" ]]; then
+               echo "FAILED EXTERNAL MODULES ${pending[*]}"
+               return 1
+            fi
 
             find "${{ env.MODULES_DIR }}" "${{ env.OBJDIR }}" -name "*.ko" -exec llvm-strip --strip-debug {} \;
          }
