@@ -193,9 +193,6 @@ jobs:
 
          compile_ext_modules() {
             extra_symbols=""
-            if [[ -f "${{ env.OBJDIR }}/Module.symvers" ]]; then
-               extra_symbols="${{ env.OBJDIR }}/Module.symvers"
-            fi
             built=()
             while IFS= read -r mod_rel; do
                mod_path="$(resolve_mod_dir "${mod_rel}" || true)"
